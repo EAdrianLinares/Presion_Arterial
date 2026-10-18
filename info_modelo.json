@@ -1,0 +1,37 @@
+{
+  "modelo": "Regresión logística",
+  "umbral": 0.4,
+  "metricas": {
+    "Accuracy": 0.653,
+    "Precisión": 0.54,
+    "Recall": 0.885,
+    "Especificidad": 0.499,
+    "F1": 0.671,
+    "ROC-AUC": 0.749
+  },
+  "matriz_confusion": {
+    "VN": 333,
+    "FP": 334,
+    "FN": 51,
+    "VP": 392
+  },
+  "opciones": {
+    "educacion": [
+      "Menos de 9.º grado",
+      "9.º a 11.º grado",
+      "Bachiller",
+      "Técnico o universidad incompleta",
+      "Universitario o más"
+    ],
+    "estado_civil": [
+      "Casado(a)",
+      "Unión libre",
+      "Soltero(a)",
+      "Divorciado(a)",
+      "Separado(a)",
+      "Viudo(a)"
+    ]
+  },
+  "n_entrenamiento": 4440,
+  "n_prueba": 1110
+}
