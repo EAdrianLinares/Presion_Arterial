@@ -1,0 +1,28 @@
+{
+  "umbral": 0.4,
+  "variables": [
+    "edad",
+    "imc",
+    "cintura_cm",
+    "sexo"
+  ],
+  "opciones": {
+    "educacion": [
+      "9.º a 11.º grado",
+      "Bachiller",
+      "Menos de 9.º grado",
+      "No aplica (menor de 20)",
+      "Técnico o universidad incompleta",
+      "Universitario o más"
+    ],
+    "estado_civil": [
+      "Casado(a)",
+      "Divorciado(a)",
+      "No aplica (menor de 20)",
+      "Separado(a)",
+      "Soltero(a)",
+      "Unión libre",
+      "Viudo(a)"
+    ]
+  }
+}
