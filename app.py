@@ -6,16 +6,27 @@ import streamlit as st
 
 st.set_page_config(page_title="Riesgo de presión arterial elevada", page_icon="🩺", layout="wide")
 
+# Variables que usa el modelo final (modelo reducido)
+VARIABLES_MODELO = ["edad", "imc", "cintura_cm", "sexo"]
+
 
 # ---------------------------------------------------------------------------
 # Carga de archivos (se hace una sola vez y queda en caché)
 # ---------------------------------------------------------------------------
 @st.cache_resource
 def cargar_modelos():
-    modelo_lr = joblib.load("modelo_presion.pkl")
-    modelo_arbol = joblib.load("modelo_arbol.pkl")
+    obj = joblib.load("modelo_presion.pkl")
     with open("info_modelo.json", encoding="utf-8") as f:
         info = json.load(f)
+    # El .pkl puede ser el pipeline solo o un diccionario {"modelo", "umbral", "variables"}
+    if isinstance(obj, dict):
+        modelo_lr = obj["modelo"]
+        info["umbral"] = obj.get("umbral", info.get("umbral"))
+        info["variables"] = obj.get("variables", VARIABLES_MODELO)
+    else:
+        modelo_lr = obj
+        info.setdefault("variables", VARIABLES_MODELO)
+    modelo_arbol = joblib.load("modelo_arbol.pkl")
     return modelo_lr, modelo_arbol, info
 
 
@@ -35,15 +46,6 @@ UMBRAL = info["umbral"]
 # ---------------------------------------------------------------------------
 # Página 1: Predicción
 # ---------------------------------------------------------------------------
-NIVELES_INGRESO = {
-    "Bajo (no alcanza para lo básico)": 0.8,
-    "Medio-bajo": 1.5,
-    "Medio": 2.5,
-    "Medio-alto": 3.5,
-    "Alto": 5.0,
-}
-
-
 def pagina_prediccion():
     st.title("🩺 Estimador de riesgo de presión arterial elevada")
     st.caption("Proyecto académico de Machine Learning clásico · Especialización en IA (CUN) · "
@@ -57,26 +59,12 @@ def pagina_prediccion():
         talla = st.number_input("Estatura (cm)", 120.0, 220.0, 168.0, step=0.5)
         cintura = st.number_input("Circunferencia de cintura (cm)", 50.0, 180.0, 95.0, step=0.5,
                                   help="Medida con cinta métrica a la altura del hueso de la cadera.")
-        fuma = st.radio("¿Ha fumado al menos 100 cigarrillos en su vida?", ["No", "Sí"], horizontal=True)
-        alcohol = st.radio("¿Ha tomado 12 o más tragos de alcohol en algún año?",
-                           ["No", "Sí", "Prefiero no responder"], horizontal=True)
-        if edad < 20:
-            educacion = estado_civil = "No aplica (menor de 20)"
-            st.info("Para menores de 20 años, educación y estado civil no aplican.")
-        else:
-            educacion = st.selectbox("Nivel educativo", info["opciones"]["educacion"], index=2)
-            estado_civil = st.selectbox("Estado civil", info["opciones"]["estado_civil"])
-        personas = st.slider("Personas que viven en el hogar", 1, 7, 3, help="7 significa 7 o más.")
-        nivel_ingreso = st.select_slider("Nivel de ingreso del hogar", list(NIVELES_INGRESO), value="Medio")
+        st.caption("El modelo usa solo estas 4 variables (edad, sexo, IMC y cintura). Las preguntas "
+                   "socioeconómicas y de hábitos no mejoraron la predicción, por eso se retiraron.")
 
     imc = peso / (talla / 100) ** 2
-    entrada = pd.DataFrame([{
-        "edad": edad, "imc": imc, "cintura_cm": cintura,
-        "ratio_ingreso_pobreza": NIVELES_INGRESO[nivel_ingreso], "personas_hogar": personas,
-        "sexo": sexo, "fuma": fuma,
-        "alcohol": "No responde" if alcohol == "Prefiero no responder" else alcohol,
-        "educacion": educacion, "estado_civil": estado_civil,
-    }])
+    entrada = pd.DataFrame([{"edad": edad, "imc": imc, "cintura_cm": cintura, "sexo": sexo}])
+    entrada = entrada[info["variables"]]
 
     col1, col2 = st.columns(2)
     col1.metric("IMC calculado", f"{imc:.1f}")
@@ -108,19 +96,20 @@ NUMERICAS = ["edad", "imc", "cintura_cm", "ratio_ingreso_pobreza", "personas_hog
 CATEGORICAS = ["sexo", "fuma", "alcohol", "educacion", "estado_civil"]
 
 DICCIONARIO = pd.DataFrame([
-    ("edad", "RIDAGEYR", "Edad en años (80 = 80 o más)", "Numérica", "Entrevista"),
-    ("sexo", "RIAGENDR", "Hombre / Mujer", "Categórica", "Entrevista"),
-    ("imc", "BMXBMI", "Índice de masa corporal: peso / estatura² (kg/m²)", "Numérica", "Examen físico"),
-    ("cintura_cm", "BMXWAIST", "Circunferencia de cintura (cm)", "Numérica", "Examen físico"),
-    ("fuma", "SMQ020", "¿Ha fumado al menos 100 cigarrillos en su vida?", "Categórica", "Entrevista"),
-    ("alcohol", "ALQ101", "¿Ha tomado 12 o más tragos en algún año?", "Categórica", "Entrevista"),
-    ("educacion", "DMDEDUC2", "Máximo nivel educativo (mayores de 20 años)", "Categórica", "Entrevista"),
-    ("estado_civil", "DMDMARTL", "Estado civil (mayores de 20 años)", "Categórica", "Entrevista"),
-    ("personas_hogar", "DMDHHSIZ", "Personas que viven en el hogar (7 = 7 o más)", "Numérica", "Entrevista"),
-    ("ratio_ingreso_pobreza", "INDFMPIR", "Ingreso familiar / línea de pobreza (5 = 5 o más)", "Numérica", "Calculada"),
+    ("edad", "RIDAGEYR", "Edad en años (80 = 80 o más)", "Numérica", "Entrevista", "Sí"),
+    ("sexo", "RIAGENDR", "Hombre / Mujer", "Categórica", "Entrevista", "Sí"),
+    ("imc", "BMXBMI", "Índice de masa corporal: peso / estatura² (kg/m²)", "Numérica", "Examen físico", "Sí"),
+    ("cintura_cm", "BMXWAIST", "Circunferencia de cintura (cm)", "Numérica", "Examen físico", "Sí"),
+    ("fuma", "SMQ020", "¿Ha fumado al menos 100 cigarrillos en su vida?", "Categórica", "Entrevista", "No"),
+    ("alcohol", "ALQ101", "¿Ha tomado 12 o más tragos en algún año?", "Categórica", "Entrevista", "No"),
+    ("educacion", "DMDEDUC2", "Máximo nivel educativo (mayores de 20 años)", "Categórica", "Entrevista", "No"),
+    ("estado_civil", "DMDMARTL", "Estado civil (mayores de 20 años)", "Categórica", "Entrevista", "No"),
+    ("personas_hogar", "DMDHHSIZ", "Personas que viven en el hogar (7 = 7 o más)", "Numérica", "Entrevista", "No"),
+    ("ratio_ingreso_pobreza", "INDFMPIR", "Ingreso familiar / línea de pobreza (5 = 5 o más)", "Numérica",
+     "Calculada", "No"),
     ("presion_elevada", "BPXSY1-2, BPXDI1-2", "Objetivo: 1 si la presión promedio es ≥130/80 mm Hg", "Binaria",
-     "Examen físico"),
-], columns=["Variable", "Código NHANES", "Descripción", "Tipo", "Origen"])
+     "Examen físico", "Objetivo"),
+], columns=["Variable", "Código NHANES", "Descripción", "Tipo", "Origen", "En modelo final"])
 
 COLORES = {"Normal": "#4C9F70", "Elevada": "#D1495B"}
 
@@ -136,7 +125,8 @@ def pagina_datos():
 
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Personas (tras la limpieza)", f"{len(df):,}")
-    c2.metric("Variables predictoras", len(NUMERICAS) + len(CATEGORICAS))
+    c2.metric("Variables analizadas / en el modelo", f"{len(NUMERICAS) + len(CATEGORICAS)} / "
+                                                     f"{len(info['variables'])}")
     c3.metric("Con presión elevada", f"{df['presion_elevada'].mean():.0%}")
     c4.metric("Edad mediana", f"{df['edad'].median():.0f} años")
 
@@ -144,7 +134,8 @@ def pagina_datos():
         st.dataframe(DICCIONARIO, hide_index=True, use_container_width=True)
         st.caption("Se descartaron 18 de las 28 columnas originales: identificadores y variables de diseño "
                    "de la encuesta, las presiones (definen el objetivo: fuga de datos), variables redundantes "
-                   "con el IMC, columnas con demasiados nulos y medidas poco prácticas para la app.")
+                   "con el IMC, columnas con demasiados nulos y medidas poco prácticas para la app. "
+                   "De las 10 analizadas, el modelo final conserva 4 (ver página de evaluación).")
 
     # --- Variable objetivo -------------------------------------------------
     st.header("1. Variable objetivo")
@@ -238,6 +229,19 @@ from sklearn.metrics import confusion_matrix, roc_curve, roc_auc_score
 
 MODELOS = {"Regresión logística": "prob_logistica", "Árbol de decisión": "prob_arbol"}
 
+# Resultados de la selección de variables (calculados en el notebook)
+IMPORTANCIA_PERMUTACION = pd.DataFrame({
+    "Variable": ["edad", "imc", "sexo", "cintura_cm", "alcohol", "ratio_ingreso_pobreza",
+                 "estado_civil", "educacion", "personas_hogar", "fuma"],
+    "Caída en AUC": [0.1870, 0.0079, 0.0075, 0.0046, 0.0004, 0.0000, -0.0001, -0.0001, -0.0007, -0.0010],
+})
+COMPARACION_MODELOS = pd.DataFrame({
+    "Modelo": ["Completo (10 variables)", "Reducido (4 variables)"],
+    "ROC-AUC validación cruzada": ["0,726 ± 0,015", "0,726 ± 0,014"],
+    "ROC-AUC prueba": [0.749, 0.751],
+    "Recall prueba (umbral 0,40)": [0.885, 0.892],
+}).set_index("Modelo")
+
 
 def calcular_metricas(y_real, prob, umbral):
     pred = (prob >= umbral).astype(int)
@@ -278,7 +282,9 @@ def pagina_evaluacion():
         "- **Ajuste de hiperparámetros:** GridSearchCV con validación cruzada de 5 particiones, "
         "optimizando F1.\n"
         "- **Sobreajuste:** no se observó. La accuracy de entrenamiento y prueba difiere en ~1 punto "
-        "(logística 0,673 vs 0,676; árbol 0,670 vs 0,660)."
+        "(logística 0,673 vs 0,676; árbol 0,670 vs 0,660).\n"
+        "- **Modelo final:** regresión logística con solo 4 variables (edad, sexo, IMC y cintura). "
+        "El árbol se conserva con las 10 variables como modelo de comparación."
     )
 
     # --- Comparación con umbral por defecto ---------------------------------
@@ -342,21 +348,45 @@ def pagina_evaluacion():
     st.info(f"Con este umbral, el modelo deja sin detectar a **{m['FN']}** de las "
             f"{m['FN'] + m['VP']} personas con presión elevada (con 0,50 eran {base['FN']}) "
             f"y genera **{m['FP']}** falsas alarmas.")
-    st.success(f"**Decisión final:** regresión logística con umbral **{UMBRAL}**. Logra el mejor F1 y un "
+
+    # --- Selección de variables ---------------------------------------------------
+    st.header("5. Selección de variables: ¿qué preguntas hacen falta?")
+    st.write("Se midió cuánto empeora el modelo (caída en ROC-AUC) cuando se desordena al azar cada "
+             "variable (importancia por permutación, 20 repeticiones). Si desordenarla no cambia nada, "
+             "la variable no aporta información.")
+    col_a, col_b = st.columns([3, 2])
+    imp_perm = IMPORTANCIA_PERMUTACION.sort_values("Caída en AUC")
+    imp_perm["En modelo final"] = imp_perm["Variable"].isin(info["variables"]).map({True: "Sí", False: "No"})
+    fig = px.bar(imp_perm, x="Caída en AUC", y="Variable", orientation="h", color="En modelo final",
+                 color_discrete_map={"Sí": "#30638E", "No": "#BBBBBB"},
+                 title="Importancia por permutación (modelo completo)")
+    col_a.plotly_chart(fig, use_container_width=True)
+    col_b.dataframe(COMPARACION_MODELOS.T, use_container_width=True)
+    col_b.markdown(
+        "La **edad** domina. **IMC, sexo y cintura** aportan poco pero de forma consistente. "
+        "Las variables socioeconómicas y de hábitos tienen importancia nula o negativa: solo agregan ruido.\n\n"
+        "Un modelo con **4 variables** rinde igual que el de 10 (AUC 0,726 en validación cruzada), "
+        "así que se adoptó el modelo reducido: igual desempeño, más simple y más fácil de usar."
+    )
+    st.caption("Una posible explicación para tabaco y alcohol: NHANES los mide como consumo alguna vez en "
+               "la vida, no como consumo actual. El AUC en validación cruzada (0,726) es la estimación más "
+               "conservadora del desempeño esperado.")
+
+    st.success(f"**Decisión final:** regresión logística con 4 variables y umbral **{UMBRAL}**. Logra un "
                "recall cercano a 0,89: prioriza detectar casos, aceptando más falsas alarmas, porque una "
                "medición extra de presión es barata y una hipertensión no detectada no lo es.")
 
     # --- Interpretación ----------------------------------------------------------
-    st.header("5. ¿Qué aprendieron los modelos?")
+    st.header("6. ¿Qué aprendieron los modelos?")
     col_a, col_b = st.columns(2)
     nombres = modelo_lr.named_steps["prep"].get_feature_names_out()
     coef = pd.DataFrame({"Variable": [n.split("__", 1)[1] for n in nombres],
                          "Coeficiente": modelo_lr.named_steps["modelo"].coef_[0]})
-    coef = coef.reindex(coef["Coeficiente"].abs().sort_values().index).tail(12)
+    coef = coef.reindex(coef["Coeficiente"].abs().sort_values().index)
     coef["Efecto"] = coef["Coeficiente"].map(lambda c: "Aumenta el riesgo" if c > 0 else "Reduce el riesgo")
     fig = px.bar(coef, x="Coeficiente", y="Variable", orientation="h", color="Efecto",
                  color_discrete_map={"Aumenta el riesgo": "#D1495B", "Reduce el riesgo": "#4C9F70"},
-                 title="Regresión logística: 12 coeficientes más grandes")
+                 title="Regresión logística (modelo final): coeficientes")
     col_a.plotly_chart(fig, use_container_width=True)
 
     nombres_arbol = modelo_arbol.named_steps["prep"].get_feature_names_out()
